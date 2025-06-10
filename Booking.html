@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>تطبيق حجز تذاكر الحافلات في تونس - نسخة مطورة</title>
+  <style>
+    /* إعدادات عامة */
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f9fafc;
+      margin: 0; padding: 0;
+      direction: rtl;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 20px;
+      color: #222;
+    }
+    main {
+      background: #fff;
+      width: 100%;
+      max-width: 480px;
+      border-radius: 12px;
+      box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+      padding: 25px 30px 35px;
+    }
+    header {
+      font-size: 1.9rem;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 25px;
+      color: #0d47a1;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: #0b3d91;
+    }
+    select, input[type="date"] {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 1.05rem;
+      border-radius: 8px;
+      border: 1.8px solid #a5acc9;
+      outline-offset: 3px;
+      transition: border-color 0.25s ease;
+      margin-bottom: 18px;
+      cursor: pointer;
+    }
+    select:focus, input[type="date"]:focus {
+      border-color: #0d47a1;
+      outline: none;
+    }
+    button {
+      width: 100%;
+      background: #0d47a1;
+      color: #fff;
+      padding: 14px 0;
+      font-size: 1.25rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      box-shadow: 0 5px 15px rgba(13, 71, 161, 0.45);
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background: #093175;
+    }
+    #map {
+      margin: 15px 0 30px;
+      height: 250px;
+      border-radius: 12px;
+      display: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .payment-methods {
+      margin-bottom: 22px;
+      color: #0d47a1;
+    }
+    .payment-methods label {
+      font-weight: 600;
+      display: block;
+      cursor: pointer;
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+    }
+    .confirmation {
+      margin-top: 22px;
+      padding: 15px 20px;
+      background: #c8e6c9;
+      border: 1.5px solid #388e3c;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #2e7d32;
+      text-align: center;
+      display: none;
+      user-select: none;
+    }
+    /* Responsive */
+    @media (max-width: 520px) {
+      main {
+        max-width: 100%;
+        padding: 20px;
+      }
+    }
+  </style>
+
+  <!-- Leaflet CSS للخرائط -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet/dist/leaflet.css"
+  />
+</head>
+<body>
+<main>
+  <header>حجز تذاكر الحافلات في تونس</header>
+
+  <label for="stateSelect">اختر الولاية</label>
+  <select id="stateSelect" aria-label="اختر الولاية">
+    <option value="" disabled selected>-- اختر الولاية --</option>
+  </select>
+
+  <label for="delegationSelect">اختر المعتمدية</label>
+  <select id="delegationSelect" aria-label="اختر المعتمدية" disabled>
+    <option value="" disabled selected>-- اختر المعتمدية --</option>
+  </select>
+
+  <label for="tripDate">تاريخ الرحلة</label>
+  <input type="date" id="tripDate" aria-label="تاريخ الرحلة" min="" />
+
+  <label for="seatCount">عدد المقاعد</label>
+  <select id="seatCount" aria-label="عدد المقاعد">
+    <option value="1" selected>1</option>
+    <option value="2">2</option>
+    <option value="3">3</option>
+    <option value="4">4</option>
+    <option value="5">5</option>
+  </select>
+
+  <div id="map"></div>
+
+  <div class="payment-methods" aria-label="طرق الدفع">
+    <label><input type="radio" name="paymentMethod" value="cash" checked /> الدفع نقدًا (كاش)</label>
+    <label><input type="radio" name="paymentMethod" value="card" /> بطاقة بنكية</label>
+    <label><input type="radio" name="paymentMethod" value="wallet" /> محفظة إلكترونية</label>
+  </div>
+
+  <button id="bookBtn" aria-label="احجز الآن">احجز الآن</button>
+
+  <div id="confirmationMsg" class="confirmation" role="alert"></div>
+</main>
+
+<!-- Leaflet JS للخرائط -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  (() => {
+    // بيانات الولايات والمعتمديات مع إحداثيات كل ولاية
+    const states = {
+      tunis: {
+        name: "تونس",
+        coords: [36.8008, 10.1801],
+        delegations: ["تونس المدينة", "حلق الوادي", "المنيهلة", "بئر القصعة", "المرسى", "سكرة"]
+      },
+      sousse: {
+        name: "سوسة",
+        coords: [35.8256, 10.6084],
+        delegations: ["سوسة المدينة", "سهل أولاد فارس", "الجم", "بنعروس"]
+      },
+      sfax: {
+        name: "صفاقس",
+        coords: [34.7406, 10.7603],
+        delegations: ["صفاقس المدينة", "المطار", "الجمّ", "جرجيس"]
+      },
+      ariana: {
+        name: "أريانة",
+        coords: [36.8665, 10.1647],
+        delegations: ["أريانة المدينة", "مقرين", "تونس البحيرة"]
+      },
+      beja: {
+        name: "باجة",
+        coords: [36.7294, 9.1815],
+        delegations: ["باجة المدينة", "تستور", "دندنة", "رمادة"]
+      },
+      sfax: {
+        name: "صفاقس",
+        coords: [34.7406, 10.7603],
+        delegations: ["صفاقس المدينة", "المطار", "الجمّ", "جرجيس"]
+      },
+      gabes: {
+        name: "قابس",
+        coords: [33.885, 10.098],
+        delegations: ["قابس المدينة", "حامة السوق", "مجاز الباب"]
+      },
+      kebili: {
+        name: "قبلي",
+        coords: [33.7041, 8.9692],
+        delegations: ["قبلي المدينة", "الذهيبة", "الناظور"]
+      }
+      // يمكنك إضافة بقية الولايات والمعتمديات بنفس الشكل
+    };
+
+    const stateSelect = document.getElementById('stateSelect');
+    const delegationSelect = document.getElementById('delegationSelect');
+    const tripDateInput = document.getElementById('tripDate');
+    const seatCountSelect = document.getElementById('seatCount');
+    const bookBtn = document.getElementById('bookBtn');
+    const confirmationMsg = document.getElementById('confirmationMsg');
+    const mapDiv = document.getElementById('map');
+
+    let map, marker;
+
+    // ضبط الحد الأدنى للتاريخ ليكون اليوم
+    tripDateInput.min = new Date().toISOString().split('T')[0];
+
+    // ملئ قائمة الولايات
+    function populateStates() {
+      Object.entries(states).forEach(([key, state]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = state.name;
+        stateSelect.appendChild(option);
+      });
+    }
+
+    // تحديث قائمة المعتمديات عند اختيار الولاية
+    function updateDelegations() {
+      const selectedState = stateSelect.value;
+      confirmationMsg.style.display = 'none';
+
+      if (!selectedState || !states[selectedState]) {
+        delegationSelect.innerHTML = '<option value="" disabled selected>-- اختر المعتمدية --</option>';
+        delegationSelect.disabled = true;
+        hideMap();
+        return;
+      }
+
+      const delegations = states[selectedState].delegations;
+      delegationSelect.innerHTML = '<option value="" disabled selected>-- اختر المعتمدية --</option>';
+
+      delegations.forEach(d => {
+        const option = document.createElement('option');
+        option.value = d;
+        option.textContent = d;
+        delegationSelect.appendChild(option);
+      });
+
+      delegationSelect.disabled = false;
+
+      // عرض الخريطة للولاية المختارة
+      showMap(states[selectedState].coords);
+    }
+
+    // إظهار الخريطة وتحديد الموقع
+    function showMap(coords) {
+      mapDiv.style.display = 'block';
+
+      if (!map) {
+        map = L.map('map').setView(coords, 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 18,
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        marker = L.marker(coords).addTo(map);
+      } else {
+        map.setView(coords, 11);
+        marker.setLatLng(coords);
+      }
+    }
+
+    // إخفاء الخريطة
+    function hideMap() {
+      if (mapDiv) mapDiv.style.display = 'none';
+    }
+
+    // التحقق من صحة البيانات وإظهار رسالة التأكيد
+    function handleBooking() {
+      const stateVal = stateSelect.value;
+      const delegationVal = delegationSelect.value;
+      const dateVal = tripDateInput.value;
+      const seatsVal = seatCountSelect.value;
+      const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
+
+      confirmationMsg.style.display = 'none';
+
+      if (!stateVal) {
+        alert('يرجى اختيار الولاية');
+        return;
+      }
+      if (!delegationVal) {
+        alert('يرجى اختيار المعتمدية');
+        return;
+      }
+      if (!dateVal) {
+        alert('يرجى اختيار تاريخ الرحلة');
+        return;
+      }
+
+      const paymentText = {
+        cash: 'كاش',
+        card: 'بطاقة بنكية',
+        wallet: 'محفظة إلكترونية'
+      }[paymentMethod] || 'طريقة غير معروفة';
+
+      confirmationMsg.textContent = `تم حجز ${seatsVal} مقعد(أ) في ولاية ${states[stateVal].name} - ${delegationVal} بتاريخ ${dateVal} مع طريقة الدفع: ${paymentText}`;
+      confirmationMsg.style.display = 'block';
+    }
+
+    // الأحداث
+    window.addEventListener('DOMContentLoaded', () => {
+      populateStates();
+    });
+    stateSelect.addEventListener('change', updateDelegations);
+    bookBtn.addEventListener('click', handleBooking);
+
+  })();
+</script>
+
+</body>
+</html>
